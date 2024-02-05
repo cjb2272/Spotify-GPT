@@ -1,6 +1,6 @@
 # Spotify-GPT 🎧
 Use ChatGPT API and Spotify API to automate music recommendations and playlist creation
-![](https://github.com/flyseddy/Spotify-GPT/blob/main/Screenshots/MusicRequest.png?raw=true)
+![](https://github.com/flyseddy/Spotify-GPT/blob/main/screenshots/MusicRequest.png?raw=true)
 
 ## Installation
 
