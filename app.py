@@ -104,7 +104,7 @@ def chat():
         data = make_playlist_request(json_completed_prompt)
         return tracks
     else:
-        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day? - Try Again :)"
+        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
 
 def check_if_request_valid(input):
     """Checks if message is a musical playlist request"""
