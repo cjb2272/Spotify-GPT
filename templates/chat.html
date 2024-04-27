@@ -25,7 +25,7 @@
 									<span class="online_icon"></span>
 								</div>
 								<div class="user_info">
-									<span>MusicGPT</span>
+									<span>MusicGPT By RIT AI</span>
 									<p>Ask Me Music Requests!</p>
 								</div>
 							</div>
@@ -48,6 +48,10 @@
 		</div>
 		
 		<script>
+			function autoScroll() {
+        		var messageBody = document.querySelector('#messageFormeight');
+        		messageBody.scrollTop = messageBody.scrollHeight - messageBody.clientHeight;
+    		}
 			$(document).ready(function() {
 				$("#messageArea").on("submit", function(event) {
 					const date = new Date();
@@ -60,6 +64,7 @@
 					
 					$("#text").val("");
 					$("#messageFormeight").append(userHtml);
+					autoScroll();
 
 					$.ajax({
 						data: {
@@ -68,8 +73,15 @@
 						type: "POST",
 						url: "/get",
 					}).done(function(data) {
-						var botHtml = '<div class="d-flex justify-content-start mb-4"><div class="img_cont_msg"><img src="https://i.ibb.co/fSNP7Rz/icons8-chatgpt-512.png" class="rounded-circle user_img_msg"></div><div class="msg_cotainer">' + data + '<span class="msg_time">' + str_time + '</span></div></div>';
+						var botHtml;
+						if (/^https?:\/\/\S+$/i.test(data.url)) {
+							botHtml = '<div class="d-flex justify-content-start mb-4"><div class="img_cont_msg"><img src="https://i.ibb.co/fSNP7Rz/icons8-chatgpt-512.png" class="rounded-circle user_img_msg"></div><div class="msg_cotainer"><a href="' + data.url + '" target="_blank">' + data.url + '</a><br><a href="' + data.url + '" target="_blank"><img src="' + data.image + '" width="150" height="150"></a><span class="msg_time">' + str_time + '</span></div></div>';
+						} else {
+							botHtml = '<div class="d-flex justify-content-start mb-4"><div class="img_cont_msg"><img src="https://i.ibb.co/fSNP7Rz/icons8-chatgpt-512.png" class="rounded-circle user_img_msg"></div><div class="msg_cotainer">' + data + '<span class="msg_time">' + str_time + '</span></div></div>';
+						}
 						$("#messageFormeight").append($.parseHTML(botHtml));
+
+						autoScroll();
 					});
 					event.preventDefault();
 				});

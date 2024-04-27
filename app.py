@@ -1,13 +1,12 @@
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, redirect, session
+import time
+from flask import Flask, render_template, request, jsonify, redirect, session, url_for
 import urllib.parse
 import requests
 import openai
 from openai import OpenAI
 import ast
 import json
-import os
-
 import os
 
 api_key = os.environ.get('OPENAI_APIKEY') # Open AI API Key https://platform.openai.com/api-keys
@@ -20,21 +19,22 @@ app.secret_key = os.environ.get('APP_SECRETKEY') # flask secret key
 
 CLIENT_ID = os.environ.get('CLIENT_ID') # Spotify Client ID: Get this info from your Spotify Dashboard https://developer.spotify.com/dashboard
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET') # Spotify Client Secret: https://developer.spotify.com/dashboard
-REDIRECT_URI = 'http://localhost:5000/callback' # Use Your domain name and add "/callback" on the end
+REDIRECT_URI = 'https://music-gpt.onrender.com/callback' # Use Your domain name and add "/callback" on the end
 
 AUTH_URL = 'https://accounts.spotify.com/authorize'
 TOKEN_URL = 'https://accounts.spotify.com/api/token'
 API_BASE_URL = 'https://api.spotify.com/v1/'
+PLAYLIST_BASE_URL = 'https://open.spotify.com/playlist/'
 
 @app.route("/")
 def index():
     """Landing Page for Spotify Authentication"""
-    return "Welcome to my Spotify App <a href='/login'>Login with Spotify</a>"
+    return "<h1>Welcome to MusicGPT by RIT AI</h1> <a href='/login'>Login with Spotify</a>"
 
 @app.route("/login")
 def login():
     """Redirects to Official Spotify Login Page"""
-    scope = "user-library-read playlist-modify-public playlist-modify-private"
+    scope = "user-library-read playlist-modify-public playlist-modify-private user-top-read"
     auth_headers = {
     "client_id": CLIENT_ID,
     "response_type": "code",
@@ -92,17 +92,23 @@ def chat():
     msg = request.form["msg"]
     input = msg # Unedited prompt
     valid = check_if_request_valid(input)
-    if valid.lower() == 'yes':
+    if valid.lower() == 'recs':
         revised_prompt = prompt_engineer(input)
         json_completed_prompt = get_completion(revised_prompt) # Json data that we will make our request with
-        make_playlist_request(json_completed_prompt) # Make playlist request
-        return json_completed_prompt
+        data = make_playlist_request(json_completed_prompt) # Make playlist request
+        return data
+    elif valid.lower() == 'tracks':
+        tracks = get_top_tracks()
+        revised_prompt = prompt_engineer(tracks) # Make the top tracks into a playlist
+        json_completed_prompt = get_completion(revised_prompt) # Json data that we will make our request with
+        data = make_playlist_request(json_completed_prompt)
+        return tracks
     else:
-        return "Sorry I only accept Music requests!"
+        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day? - Try Again :)"
 
 def check_if_request_valid(input):
     """Checks if message is a musical playlist request"""
-    prompt_check = f"Does this prompt have anything to do with asking for music recommendations? If it does, simply say 'yes', if it doesn't, simply say 'no' - Prompt:'{input}'"
+    prompt_check = f"Does this prompt have anything to do with asking for music recommendations or making a playlist? If it does, simply say 'recs'. If it has anything to do with asking for top songs or tracks (Ex. What are my top tracks? What are my top songs?), simply say 'tracks'. If it is neither, simply say 'no' - Prompt:'{input}'"
     response = get_completion(prompt_check)
     return response
 
@@ -131,8 +137,8 @@ def get_user_id(headers):
 def create_playlist(id, headers):
     """Creates Playlist"""
     request_body = json.dumps({
-      "name": "TEST-GPT",
-      "description":"Testing MY API HEHE",
+      "name": "MusicGPT By RIT AI",
+      "description":"Your Curated Playlist",
       "public": False
     })
     response_playlist = requests.post(API_BASE_URL + f"users/{id}/playlists", data=request_body, headers=headers)
@@ -153,6 +159,38 @@ def add_tracks_to_playlist(playlist_id, list_of_track_ids, headers):
     })
     response = requests.post(API_BASE_URL + f"playlists/{playlist_id}/tracks", data=request_body, headers=headers)
     return response
+
+def get_playlist_image(playlist_id, headers):
+    time.sleep(2)
+    response = requests.get(API_BASE_URL + f"playlists/{playlist_id}/images", headers=headers)
+    image = response.json()[0]['url']
+    return image
+
+def get_top_tracks():
+    list_of_tracks = []
+    if 'access_token' not in session:
+        return redirect('/login')
+    
+    if datetime.now().timestamp() > session['expires_at']:
+        return redirect('/refresh-token')
+    
+    headers = {
+        'Authorization': f"Bearer {session['access_token']}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(API_BASE_URL + "me/top/tracks", headers=headers, params={'time_range': 'medium_term', "limit": 10})
+    top_tracks_json = response.json()
+
+    str_tracks = ""
+    song_count = 1
+    for i in range(len(top_tracks_json['items'])):
+        artist = top_tracks_json['items'][i]['artists'][0]['name']
+        song =  top_tracks_json['items'][i]['name']
+        str_tracks += str(song_count) + ". " + song + " - " + artist + ", "
+        song_count += 1
+    return str_tracks
+
 
 def make_playlist_request(gpt_response):
     """Main Method for app"""
@@ -178,14 +216,21 @@ def make_playlist_request(gpt_response):
     # Get Playlist ID
     response_playlist_id = playlist_obj.json()['id']
 
+
     song_ids = []
     for i in range(len(new_dict['playlist'])):
         search_query = new_dict['playlist'][i]['song'] + " " + new_dict['playlist'][i]['artist']
         track_id = get_track_id(search_query, headers)
         song_ids.append(track_id)
 
-    response = add_tracks_to_playlist(response_playlist_id, song_ids, headers)
-    return response
+    add_tracks_to_playlist(response_playlist_id, song_ids, headers)
+
+    # Get playlist image
+    response_playlist_image = get_playlist_image(response_playlist_id, headers)
+
+    playlist_url = PLAYLIST_BASE_URL + response_playlist_id
+
+    return {"url": playlist_url, "image": response_playlist_image} 
 
 if __name__ == '__main__':
     app.run()
