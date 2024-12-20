@@ -9,17 +9,27 @@ import ast
 import json
 import os
 
-api_key = os.environ.get('OPENAI_APIKEY') # Open AI API Key https://platform.openai.com/api-keys
-openai.api_key = api_key
+# as a shortcut we name out flask app "app.py" that way when issuing the run flask command we dont have to specify an app location with --app
 
-client = OpenAI(api_key=api_key)
+my_api_key = os.environ.get('OPENAI_API_KEY') # My secret key stored as an environment variable on my PC
+openai.api_key = my_api_key # not sure what this line is doing TODO can try removing
+
+client = OpenAI(
+    api_key=my_api_key
+)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('APP_SECRETKEY') # flask secret key
+app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
+# OAuth-based authentication flow
 CLIENT_ID = os.environ.get('CLIENT_ID') # Spotify Client ID: Get this info from your Spotify Dashboard https://developer.spotify.com/dashboard
 CLIENT_SECRET = os.environ.get('CLIENT_SECRET') # Spotify Client Secret: https://developer.spotify.com/dashboard
-REDIRECT_URI = 'https://music-gpt.onrender.com/callback' # Use Your domain name and add "/callback" on the end
+
+# Sedrick deployed his app quickly using Render, a hosting service
+REDIRECT_URI = 'http://127.0.0.1:5000/callback' # Use Your domain name (where app is deployed) and add "/callback" on the end
+# REDIRECT_URI is the URL to which the user is redirected after successful authentication
+# When you authenticate with a third party service like spotify , 
+# that service will redirect the user back to your app after the authentication process is complete
 
 AUTH_URL = 'https://accounts.spotify.com/authorize'
 TOKEN_URL = 'https://accounts.spotify.com/api/token'
@@ -29,9 +39,9 @@ PLAYLIST_BASE_URL = 'https://open.spotify.com/playlist/'
 @app.route("/")
 def index():
     """Landing Page for Spotify Authentication"""
-    return "<h1>Welcome to MusicGPT by RIT AI</h1> <a href='/login'>Login with Spotify</a>"
+    return "<h1>Welcome to MusicGPT by RIT AI</h1> <a href='/login'>Login with Spotify</a>"  #html is our default response type in FLASK
 
-@app.route("/login")
+@app.route("/login") # the route() decorator binds a function to a URL
 def login():
     """Redirects to Official Spotify Login Page"""
     scope = "user-library-read playlist-modify-public playlist-modify-private user-top-read"
@@ -45,7 +55,9 @@ def login():
     auth_url = f"{AUTH_URL}?{urllib.parse.urlencode(auth_headers)}"
     return redirect(auth_url)
 
-@app.route("/callback")
+# AFTER successful completetion of spotify authentication (third party auth)
+# callback endpoint for handling this redirect and processing any token or user info sent by the spotify (or whatever third party service)
+@app.route("/callback") 
 def callback():
     """Grants user access token info and redirects to Spotify-GPT App"""
     if 'error' in request.args:
@@ -65,9 +77,10 @@ def callback():
         session['access_token'] = token_info['access_token']
         session['refresh_token'] = token_info['refresh_token']
         session['expires_at'] = datetime.now().timestamp() + token_info['expires_in']
-        return render_template("chat.html")
+        return render_template("chat.html") # flask will look for templates in the templates folder 
+                                            # TODO not sure what the autoscroll function in chat.html is doing
 
-@app.route("/refresh-token")
+@app.route("/refresh-token") # common practice to use dashes in route names
 def refresh_token():
     """Refresh Token Logic"""
     if 'refresh_token' not in session:
@@ -86,7 +99,7 @@ def refresh_token():
         session['expires_at'] = datetime.now().timestamp() + new_token_info['expires_in']
         return render_template("chat.html")
 
-@app.route("/get", methods=["GET", "POST"])
+@app.route("/get", methods=["GET", "POST"]) # by default, a route only answers to get requests - methods param used
 def chat():
     """Chatbot logic"""
     msg = request.form["msg"]
@@ -112,13 +125,15 @@ def check_if_request_valid(input):
     response = get_completion(prompt_check)
     return response
 
-def get_completion(prompt, model="gpt-3.5-turbo"):
+# hardcode the model we intend to use
+def get_completion(prompt, model="gpt-4o-mini"): 
     """ChatGPT API Helper Method"""
     messages = [{"role": "user", "content": prompt}]
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0, # this is the degree of randomness of the model's output
+        store=True, # do we need this / what is it for
     )
     return response.choices[0].message.content
 
@@ -233,4 +248,4 @@ def make_playlist_request(gpt_response):
     return {"url": playlist_url, "image": response_playlist_image} 
 
 if __name__ == '__main__':
-    app.run()
+    app.run() #debug=True can be placed as param
