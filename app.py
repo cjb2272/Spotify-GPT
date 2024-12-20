@@ -22,8 +22,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 
 # OAuth-based authentication flow
-CLIENT_ID = os.environ.get('CLIENT_ID') # Spotify Client ID: Get this info from your Spotify Dashboard https://developer.spotify.com/dashboard
-CLIENT_SECRET = os.environ.get('CLIENT_SECRET') # Spotify Client Secret: https://developer.spotify.com/dashboard
+CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID') # Spotify Client ID & Secret found in Spotify Dashboard https://developer.spotify.com/dashboard
+CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET') 
 
 # Sedrick deployed his app quickly using Render, a hosting service
 REDIRECT_URI = 'http://127.0.0.1:5000/callback' # Use Your domain name (where app is deployed) and add "/callback" on the end
@@ -31,47 +31,57 @@ REDIRECT_URI = 'http://127.0.0.1:5000/callback' # Use Your domain name (where ap
 # When you authenticate with a third party service like spotify , 
 # that service will redirect the user back to your app after the authentication process is complete
 
-AUTH_URL = 'https://accounts.spotify.com/authorize'
-TOKEN_URL = 'https://accounts.spotify.com/api/token'
+AUTH_ENDPOINT_URI = 'https://accounts.spotify.com/authorize' # AUTH_URL
+TOKEN_ENDPOINT_URI = 'https://accounts.spotify.com/api/token'  # Token URL
 API_BASE_URL = 'https://api.spotify.com/v1/'
 PLAYLIST_BASE_URL = 'https://open.spotify.com/playlist/'
 
 @app.route("/")
 def index():
-    """Landing Page for Spotify Authentication"""
-    return "<h1>Welcome to MusicGPT by RIT AI</h1> <a href='/login'>Login with Spotify</a>"  #html is our default response type in FLASK
+    """Landing Page for Spotify Authentication for the Spotify-GPT application.""" # Docstrings
+    return render_template("index.html")  #html is our default response type in FLASK
+
 
 @app.route("/login") # the route() decorator binds a function to a URL
 def login():
-    """Redirects to Official Spotify Login Page"""
+    """
+    Redirects to Official Spotify Login Page
+    Method for requesting Spotify User AUthorization by sending a GET request to the authorize endpoint
+    """
+    # the user doing authentication is asked to authorize access to data sets /features defined in the scopes listed space delimited
     scope = "user-library-read playlist-modify-public playlist-modify-private user-top-read"
-    auth_headers = {
+    auth_headers = {  # these are not headers, they are query string arguments which become part of the URL
     "client_id": CLIENT_ID,
     "response_type": "code",
     "redirect_uri": REDIRECT_URI,
     "scope": scope,
-    "show_dialog": True
+    "show_dialog": True,
+    #"state": .... security param strongly recommended if moving to public..
     }
-    auth_url = f"{AUTH_URL}?{urllib.parse.urlencode(auth_headers)}"
-    return redirect(auth_url)
+    # urllib.parse.urlencode() converts a dict of auth_headers into a query string for example 'client_id=123&response_type=code'
+    auth_url = f"{AUTH_ENDPOINT_URI}?{urllib.parse.urlencode(auth_headers)}"
+    return redirect(auth_url) 
 
 # AFTER successful completetion of spotify authentication (third party auth)
 # callback endpoint for handling this redirect and processing any token or user info sent by the spotify (or whatever third party service)
 @app.route("/callback") 
 def callback():
-    """Grants user access token info and redirects to Spotify-GPT App"""
+    """
+    Grants user access token info and redirects to Spotify-GPT App
+    Includes process of requesting an access token which remains valid for 1 hour.
+    """
     if 'error' in request.args:
         return jsonify({"error": request.args['error']})
     
     if 'code' in request.args:
         req_body = {
             'code': request.args['code'],
-            'grant_type': 'authorization_code',
+            'grant_type': 'authorization_code',   # should this be set to client_credentials
             'redirect_uri': REDIRECT_URI,
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET 
         }
-        response = requests.post(TOKEN_URL, data=req_body)
+        response = requests.post(TOKEN_ENDPOINT_URI, data=req_body)
         token_info = response.json()
 
         session['access_token'] = token_info['access_token']
@@ -92,7 +102,7 @@ def refresh_token():
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET
         } 
-        response = requests.post(TOKEN_URL, data=req_body)
+        response = requests.post(TOKEN_ENDPOINT_URI, data=req_body)
         new_token_info = response.json()
 
         session['access_token'] = new_token_info['access_token']
