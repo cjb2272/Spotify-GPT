@@ -46,7 +46,7 @@ def index():
 def login():
     """
     Redirects to Official Spotify Login Page
-    Method for requesting Spotify User AUthorization by sending a GET request to the authorize endpoint
+    Method for requesting Spotify User Authorization by sending a GET request to the authorize endpoint
     """
     # the user doing authentication is asked to authorize access to data sets /features defined in the scopes listed space delimited
     scope = "user-library-read playlist-modify-public playlist-modify-private user-top-read"
