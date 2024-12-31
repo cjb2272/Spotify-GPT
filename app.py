@@ -33,7 +33,7 @@ REDIRECT_URI = 'http://127.0.0.1:5000/callback' # Use Your domain name (where ap
 
 AUTH_ENDPOINT_URI = 'https://accounts.spotify.com/authorize' # AUTH_URL
 TOKEN_ENDPOINT_URI = 'https://accounts.spotify.com/api/token'  # Token URL
-API_BASE_URL = 'https://api.spotify.com/v1/'
+API_BASE_URL = 'https://api.spotify.com/v1/' # Base Address of the Spotify Web API.  https://api.spotify.com. why is v1 included
 PLAYLIST_BASE_URL = 'https://open.spotify.com/playlist/'
 
 @app.route("/")
@@ -44,13 +44,14 @@ def index():
 
 @app.route("/login") # the route() decorator binds a function to a URL
 def login():
-    """
-    Redirects to Official Spotify Login Page
-    Method for requesting Spotify User Authorization by sending a GET request to the authorize endpoint
+    """ Method for requesting Spotify User Authorization by sending a GET request to the authorize endpoint
+        - Redirects to Official Spotify Login Page
+        - Scope header:
+        ---- playlist-modify-private allows for creating a private playlist
     """
     # the user doing authentication is asked to authorize access to data sets /features defined in the scopes listed space delimited
     scope = "user-library-read playlist-modify-public playlist-modify-private user-top-read"
-    auth_headers = {  # these are not headers, they are query string arguments which become part of the URL
+    auth_headers = {  # these are query string arguments which become part of the URL.. maybe they become headers after that like
     "client_id": CLIENT_ID,
     "response_type": "code",
     "redirect_uri": REDIRECT_URI,
@@ -62,13 +63,18 @@ def login():
     auth_url = f"{AUTH_ENDPOINT_URI}?{urllib.parse.urlencode(auth_headers)}"
     return redirect(auth_url) 
 
+
 # AFTER successful completetion of spotify authentication (third party auth)
 # callback endpoint for handling this redirect and processing any token or user info sent by the spotify (or whatever third party service)
 @app.route("/callback") 
 def callback():
-    """
-    Grants user access token info and redirects to Spotify-GPT App
-    Includes process of requesting an access token which remains valid for 1 hour.
+    """ Grants user access token info and redirects to Spotify-GPT App
+        - Includes process of requesting an access token which remains valid for 1 hour.
+        - Sets Session Variables including...
+        ---- access_token, used as header in API Calls to access resources (artists/albums/tracks) or user's data (profile/playlists).
+        ---- refresh_token, access_token on valid for 1 hour...
+        ---- expires_at
+        - 
     """
     if 'error' in request.args:
         return jsonify({"error": request.args['error']})
@@ -76,7 +82,7 @@ def callback():
     if 'code' in request.args:
         req_body = {
             'code': request.args['code'],
-            'grant_type': 'authorization_code',   # should this be set to client_credentials
+            'grant_type': 'authorization_code',
             'redirect_uri': REDIRECT_URI,
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET 
@@ -89,6 +95,7 @@ def callback():
         session['expires_at'] = datetime.now().timestamp() + token_info['expires_in']
         return render_template("chat.html") # flask will look for templates in the templates folder 
                                             # TODO not sure what the autoscroll function in chat.html is doing
+
 
 @app.route("/refresh-token") # common practice to use dashes in route names
 def refresh_token():
@@ -105,92 +112,176 @@ def refresh_token():
         response = requests.post(TOKEN_ENDPOINT_URI, data=req_body)
         new_token_info = response.json()
 
-        session['access_token'] = new_token_info['access_token']
+        session['access_token'] = new_token_info['access_token'] 
         session['expires_at'] = datetime.now().timestamp() + new_token_info['expires_in']
         return render_template("chat.html")
 
+
 @app.route("/get", methods=["GET", "POST"]) # by default, a route only answers to get requests - methods param used
 def chat():
-    """Chatbot logic"""
-    msg = request.form["msg"]
+    """ Main Chatbot Logic 
+        - Currently handles strickly playlist creation.
+        - triggers on submit button in chat.html form
+    """
+    msg = request.form["msg"] # should be grabbing that raw text we set as the data in the ajax POST
     input = msg # Unedited prompt
     valid = check_if_request_valid(input)
     if valid.lower() == 'recs':
         revised_prompt = prompt_engineer(input)
-        json_completed_prompt = get_completion(revised_prompt) # Json data that we will make our request with
-        data = make_playlist_request(json_completed_prompt) # Make playlist request
+        # json_completed_prompt will be set to the playlist chatGPT comes up with!
+        json_completed_prompt = get_completion(revised_prompt) # consult chat for response in json format
+        data = make_playlist_request(json_completed_prompt)
         return data
+    else:
+        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, Make me a playlist for a rainy day?"
+    # "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
+    """
     elif valid.lower() == 'tracks':
         tracks = get_top_tracks()
         revised_prompt = prompt_engineer(tracks) # Make the top tracks into a playlist
         json_completed_prompt = get_completion(revised_prompt) # Json data that we will make our request with
         data = make_playlist_request(json_completed_prompt)
         return tracks
-    else:
-        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
+    """
+
 
 def check_if_request_valid(input):
-    """Checks if message is a musical playlist request"""
-    prompt_check = f"Does this prompt have anything to do with asking for music recommendations or making a playlist? If it does, simply say 'recs'. If it has anything to do with asking for top songs or tracks (Ex. What are my top tracks? What are my top songs?), simply say 'tracks'. If it is neither, simply say 'no' - Prompt:'{input}'"
+    """ Checks if message is a musical playlist request.
+        - Consulting Chat on the Back End to ask if a Users input/requests/demands/
+          whatever it may be pertains to the scope of our applciation.
+        - returns one of Chat's possible responses pertaining request validity: {"recs", "no"}
+    """
+    #prompt_check = f"Does this prompt have anything to do with asking for music recommendations or making a playlist? If it does, simply say 'recs'. If it has anything to do with asking for top songs or tracks (Ex. What are my top tracks? What are my top songs?), simply say 'tracks'. If it is neither, simply say 'no' - Prompt:'{input}'"
+    prompt_check = ( 
+        "Does this prompt have anything to do with asking for music recommendations or making a playlist? "
+        "If it does, simply say 'recs'. "
+        f"If it does not, simply say 'no' - Prompt:'{input}'"
+    )
     response = get_completion(prompt_check)
     return response
 
+
 # hardcode the model we intend to use
 def get_completion(prompt, model="gpt-4o-mini"): 
-    """ChatGPT API Helper Method"""
+    """  ChatGPT API Helper Method
+         - takes a given prompt and returns the response
+    """
     messages = [{"role": "user", "content": prompt}]
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0, # this is the degree of randomness of the model's output
-        store=True, # do we need this / what is it for
+        #store=True, # do we need this / what is it for
     )
     return response.choices[0].message.content
 
+
 def prompt_engineer(input):
-    """Makes the prompt into a song recommendation format so we can process it"""
+    """ Prompt engineer behavior, taking users input and adding increased specificity:
+        - Makes the prompt into a song recommendation format so we can process it
+        - Alters prompt to ask for a response in json format with provided example
+    """
     prompt = input + """. Make sure this playlist is in json format and 'artist' and 'song' are the keys. Limit this playlist to 10 songs please. 
     Ex. {'playlist':[{'artist':'Frank Ocean', 'song': 'Thinking Bout You'},{'artist': 'Daniel Caesar', 'song': 'Japanese Denim'}]}"""
     return prompt
 
+
 def get_user_id(headers):
-    """Gets the user id of the user's spotify account"""
+    """ Get user's spotifty username ('Spotify user ID') ex. charlie7977
+        - GET request for the 'Spotify user ID' pertaining to a user's spotify account
+    """
     response = requests.get(API_BASE_URL + 'me', headers=headers)
     spotify_id = response.json()['id']
     return spotify_id
 
+
 def create_playlist(id, headers):
-    """Creates Playlist"""
+    """ Creates Empty Playlist
+        - name, desc, and public/private specified
+        - sends POST request to the API to create playlist
+    """
     request_body = json.dumps({
-      "name": "MusicGPT By RIT AI",
-      "description":"Your Curated Playlist",
-      "public": False
+      "name": "TEST-PLAYLIST",
+      "description":"Playlist generated by ChatGPT according to your specific playlist creation request!",
+      "public": False   # defaults to True unless specified
     })
     response_playlist = requests.post(API_BASE_URL + f"users/{id}/playlists", data=request_body, headers=headers)
     return response_playlist
 
+
 def get_track_id(search_query, headers):
-    """Gets the id of a music track"""
+    """ Gets the id of a music track
+        - 
+    """
     track_info = requests.get(API_BASE_URL + "search", headers=headers, params={'q': {search_query}, "type": "track"})
     track_info_json = track_info.json()
     id = track_info_json['tracks']['items'][0]['id']
     final_id = "spotify:track:" + id
     return final_id
 
+
 def add_tracks_to_playlist(playlist_id, list_of_track_ids, headers):
-    """Adds a list of tracks to a playlist"""
+    """ Adds a list of tracks to a playlist
+        - 
+    """
     request_body = json.dumps({
       "uris": list_of_track_ids
     })
     response = requests.post(API_BASE_URL + f"playlists/{playlist_id}/tracks", data=request_body, headers=headers)
     return response
 
+
 def get_playlist_image(playlist_id, headers):
+    """
+    """
     time.sleep(2)
     response = requests.get(API_BASE_URL + f"playlists/{playlist_id}/images", headers=headers)
     image = response.json()[0]['url']
     return image
 
+
+def make_playlist_request(gpt_response):
+    """ Main Method for Playlist Creation Functionality 
+        - 
+    """
+    if 'access_token' not in session:
+        return redirect('/login')
+    
+    if datetime.now().timestamp() > session['expires_at']:
+        return redirect('/refresh-token')
+    
+    headers = {
+        'Authorization': f"Bearer {session['access_token']}",
+        "Content-Type": "application/json"
+    }
+
+    new_dict = ast.literal_eval(gpt_response) # TODO Rename new_dict  
+
+    user_id = get_user_id(headers) # Get user's spotifty username ('Spotify user ID') ex. charlie7977
+
+    playlist_obj = create_playlist(user_id, headers) # Create Playlist and retrieve object. 
+
+    # Get Playlist ID (instance of a 'Spotify ID')
+    response_playlist_id = playlist_obj.json()['id'] # Grabbing the "Spotify ID associated with this playlist"
+
+
+    song_ids = []
+    for i in range(len(new_dict['playlist'])):
+        search_query = new_dict['playlist'][i]['song'] + " " + new_dict['playlist'][i]['artist'] # "Thinking Bout You Frank Ocean"
+        track_id = get_track_id(search_query, headers)
+        song_ids.append(track_id)
+
+    add_tracks_to_playlist(response_playlist_id, song_ids, headers)
+
+    # Get playlist image
+    response_playlist_image = get_playlist_image(response_playlist_id, headers)
+
+    playlist_url = PLAYLIST_BASE_URL + response_playlist_id
+
+    return {"url": playlist_url, "image": response_playlist_image} 
+
+
+'''
 def get_top_tracks():
     list_of_tracks = []
     if 'access_token' not in session:
@@ -215,47 +306,7 @@ def get_top_tracks():
         str_tracks += str(song_count) + ". " + song + " - " + artist + ", "
         song_count += 1
     return str_tracks
-
-
-def make_playlist_request(gpt_response):
-    """Main Method for app"""
-    if 'access_token' not in session:
-        return redirect('/login')
-    
-    if datetime.now().timestamp() > session['expires_at']:
-        return redirect('/refresh-token')
-    
-    headers = {
-        'Authorization': f"Bearer {session['access_token']}",
-        "Content-Type": "application/json"
-    }
-
-    new_dict = ast.literal_eval(gpt_response)
-
-    # Get User ID
-    user_id = get_user_id(headers)
-
-    # Create Playlist
-    playlist_obj = create_playlist(user_id, headers)
-
-    # Get Playlist ID
-    response_playlist_id = playlist_obj.json()['id']
-
-
-    song_ids = []
-    for i in range(len(new_dict['playlist'])):
-        search_query = new_dict['playlist'][i]['song'] + " " + new_dict['playlist'][i]['artist']
-        track_id = get_track_id(search_query, headers)
-        song_ids.append(track_id)
-
-    add_tracks_to_playlist(response_playlist_id, song_ids, headers)
-
-    # Get playlist image
-    response_playlist_image = get_playlist_image(response_playlist_id, headers)
-
-    playlist_url = PLAYLIST_BASE_URL + response_playlist_id
-
-    return {"url": playlist_url, "image": response_playlist_image} 
+'''
 
 if __name__ == '__main__':
     app.run() #debug=True can be placed as param
