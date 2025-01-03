@@ -9,14 +9,15 @@ import ast
 import json
 import os
 
-# as a shortcut we name out flask app "app.py" that way when issuing the run flask command we dont have to specify an app location with --app
+# as a shortcut we name out flask app "app.py" that way when issuing the flask run command we dont have to specify an app location with --app
 
-my_api_key = os.environ.get('OPENAI_API_KEY') # My secret key stored as an environment variable on my PC
-openai.api_key = my_api_key # not sure what this line is doing TODO can try removing
+# My secret key stored as an environment variable on my PC, intentionally 'OPENAI_API_VAL' instead of 'OPENAI_API_KEY'
+my_api_key = os.environ.get('OPENAI_API_VAL')
 
-client = OpenAI(
-    api_key=my_api_key
-)
+client = OpenAI() # AUTO Grabs api_key value on construction from enviornment key 'OPENAI_API_KEY'
+#client = OpenAI(
+#    api_key=my_api_key 
+#)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
@@ -164,15 +165,23 @@ def check_if_request_valid(input):
 # hardcode the model we intend to use
 def get_completion(prompt, model="gpt-4o-mini"): 
     """  ChatGPT API Helper Method
-         - takes a given prompt and returns the response
+         - Utilizing API ability: Creating a Chat Completion
+         ---- Given a list of messages comprising a conversation
+         ---- Return a model response
+         - IN this case: takes a given prompt and returns the response
     """
-    messages = [{"role": "user", "content": prompt}]
+    messages = [
+        {"role": "developer", "content": "You are a helpful assistant."},
+        {"role": "user", "content": prompt}
+    ] # messages obj serves as set of instructions for model, role dictates how model interprets
     response = client.chat.completions.create(
         model=model,
         messages=messages,
-        temperature=0, # this is the degree of randomness of the model's output
+        temperature=0.0 # the degree of randomness vs focused and deterministic for lower vals of the model's output (0.0-2.0). 
+                      # recommended to alter this or 'top_p'
         #store=True, # do we need this / what is it for
     )
+    # specify parameter 'n' above to have model generate more than 1 response (choices array) for the user to choose from.
     return response.choices[0].message.content
 
 
