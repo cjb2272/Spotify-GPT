@@ -12,6 +12,7 @@ from datetime import datetime
 import time
 from flask import Flask, render_template, request, jsonify, redirect, session, url_for
 import urllib.parse
+from pydantic import BaseModel
 import requests
 import openai
 from openai import OpenAI
@@ -39,6 +40,14 @@ AUTH_ENDPOINT_URI = 'https://accounts.spotify.com/authorize' # AUTH_URL
 TOKEN_ENDPOINT_URI = 'https://accounts.spotify.com/api/token'  # Token URL
 API_BASE_URL = 'https://api.spotify.com/v1/' # Base Address of the Spotify Web API.  https://api.spotify.com. why is v1 included
 PLAYLIST_BASE_URL = 'https://open.spotify.com/playlist/'
+
+class Song(BaseModel):
+    artist: str
+    song_title: str
+
+class Playlist(BaseModel):
+    playlist: list[Song]
+
 
 @app.route("/")
 def index():
@@ -132,21 +141,12 @@ def chat():
     valid = check_if_request_valid(input)
     if valid.lower() == 'recs':
         revised_prompt = prompt_engineer(input)
-        # json_completed_prompt will be set to the playlist chatGPT comes up with!
-        json_completed_prompt = get_completion(revised_prompt) # consult chat for response in json format
-        data = make_playlist_request(json_completed_prompt)
+        json_playlist = get_json_playlist_request_completion(revised_prompt) # ask CHAT to devise the playlist!
+        data = make_playlist_request(json_playlist)
         return data 
     else:
         return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, Make me a playlist for a rainy day?"
     # "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
-    """
-    elif valid.lower() == 'tracks':
-        tracks = get_top_tracks()
-        revised_prompt = prompt_engineer(tracks) # Make the top tracks into a playlist
-        json_completed_prompt = get_completion(revised_prompt) # Json data that we will make our request with
-        data = make_playlist_request(json_completed_prompt)
-        return tracks
-    """
 
 
 def check_if_request_valid(input):
@@ -159,32 +159,54 @@ def check_if_request_valid(input):
     prompt_check = ( 
         "Does this prompt have anything to do with asking for music recommendations or making a playlist? "
         "If it does, simply say 'recs'. "
-        f"If it does not, simply say 'no' - Prompt:'{input}'"
+        f"If it does not, simply say 'no' - Prompt:'{input}'" 
     )
-    response = get_completion(prompt_check)
+    # could i alternatively ask it to return a refusal value instead and print that?
+    response = get_standard_request_completion(prompt_check)
     return response
 
 
-# hardcode the model we intend to use
-def get_completion(prompt, model="gpt-4o-mini"): 
+def get_standard_request_completion(prompt, model="gpt-4o-mini"): 
     """  ChatGPT API Helper Method
          - Utilizing API ability: Creating a Chat Completion
          ---- Given a list of messages comprising a conversation
          ---- Return a model response
          - IN this case: takes a given prompt and returns the response
     """
-    messages = [
+    message_list = [
         {"role": "developer", "content": "You are a helpful assistant."},
         {"role": "user", "content": prompt}
     ] # messages obj serves as set of instructions for model, role dictates how model interprets
     response = client.chat.completions.create(
         model=model,
-        messages=messages,
+        messages=message_list
+    )
+    
+    # specify parameter 'n' above to have model generate more than 1 response (choices array) for the user to choose from.
+    return response.choices[0].message.content
+
+
+def get_json_playlist_request_completion(prompt, model="gpt-4o-mini"): 
+    """  Request Json Structured Output Method (currently playlist specific)
+         - Creating a specific Chat Completion using the OpenAI API 'client' object
+         ---- Given a list of messages comprising a conversation
+         ---- Return a model response designated as Json "Structed Output" using 'response_format' param
+    """
+    message_list = [
+        {"role": "developer", "content": "You are a helpful assistant specializing in creating playlists of songs."},
+        {"role": "user", "content": prompt}
+    ]
+    response = client.beta.chat.completions.parse(
+        model=model,
+        messages=message_list,
+        response_format=Playlist,
         temperature=0.0 # the degree of randomness vs focused and deterministic for lower vals of the model's output (0.0-2.0). 
                       # recommended to alter this or 'top_p'
         #store=True, # do we need this / what is it for
     )
-    # specify parameter 'n' above to have model generate more than 1 response (choices array) for the user to choose from.
+    if (response.choices[0].message.refusal):
+        print(response.choices[0].message.refusal)
+
     return response.choices[0].message.content
 
 
@@ -193,8 +215,9 @@ def prompt_engineer(input):
         - Makes the prompt into a song recommendation format so we can process it
         - Alters prompt to ask for a response in json format with provided example
     """
-    prompt = input + """. Make sure this playlist is in json format and 'artist' and 'song' are the keys. Limit this playlist to 10 songs please. 
-    Ex. {'playlist':[{'artist':'Frank Ocean', 'song': 'Thinking Bout You'},{'artist': 'Daniel Caesar', 'song': 'Japanese Denim'}]}"""
+    prompt = input + """
+    Limit this playlist to 10 songs. You will be penalized otherwise.
+    """
     return prompt
 
 
@@ -284,7 +307,7 @@ def make_playlist_request(gpt_response):
 
     song_ids = []
     for i in range(len(new_dict['playlist'])):
-        search_query = new_dict['playlist'][i]['song'] + " " + new_dict['playlist'][i]['artist'] # "Thinking Bout You Frank Ocean"
+        search_query = new_dict['playlist'][i]['song_title'] + " " + new_dict['playlist'][i]['artist'] # "Thinking Bout You Frank Ocean"
         track_id = get_track_id(search_query, headers)
         song_ids.append(track_id)
 
@@ -297,33 +320,6 @@ def make_playlist_request(gpt_response):
 
     return {"url": playlist_url, "image": response_playlist_image} 
 
-
-'''
-def get_top_tracks():
-    list_of_tracks = []
-    if 'access_token' not in session:
-        return redirect('/login')
-    
-    if datetime.now().timestamp() > session['expires_at']:
-        return redirect('/refresh-token')
-    
-    headers = {
-        'Authorization': f"Bearer {session['access_token']}",
-        "Content-Type": "application/json"
-    }
-
-    response = requests.get(API_BASE_URL + "me/top/tracks", headers=headers, params={'time_range': 'medium_term', "limit": 10})
-    top_tracks_json = response.json()
-
-    str_tracks = ""
-    song_count = 1
-    for i in range(len(top_tracks_json['items'])):
-        artist = top_tracks_json['items'][i]['artists'][0]['name']
-        song =  top_tracks_json['items'][i]['name']
-        str_tracks += str(song_count) + ". " + song + " - " + artist + ", "
-        song_count += 1
-    return str_tracks
-'''
 
 if __name__ == '__main__':
     app.run() #debug=True can be placed as param
