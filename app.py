@@ -1,3 +1,13 @@
+"""
+FLASK SERVER MAIN FILE
+@author: Charles Baker
+@original_author: Sedrick Thomas (https://github.com/flyseddy)
+
+- As a shortcut we name out flask app "app.py" that way when issuing the flask run command 
+  we dont have to specify an app location with --app
+
+"""
+
 from datetime import datetime
 import time
 from flask import Flask, render_template, request, jsonify, redirect, session, url_for
@@ -9,15 +19,8 @@ import ast
 import json
 import os
 
-# as a shortcut we name out flask app "app.py" that way when issuing the flask run command we dont have to specify an app location with --app
-
-# My secret key stored as an environment variable on my PC, intentionally 'OPENAI_API_VAL' instead of 'OPENAI_API_KEY'
-my_api_key = os.environ.get('OPENAI_API_VAL')
-
-client = OpenAI() # AUTO Grabs api_key value on construction from enviornment key 'OPENAI_API_KEY'
-#client = OpenAI(
-#    api_key=my_api_key 
-#)
+# New Constructor AUTO Grabs api_key value from enviornment key with dedicated name 'OPENAI_API_KEY'
+client = OpenAI()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
