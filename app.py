@@ -131,7 +131,7 @@ def chat():
         # json_completed_prompt will be set to the playlist chatGPT comes up with!
         json_completed_prompt = get_completion(revised_prompt) # consult chat for response in json format
         data = make_playlist_request(json_completed_prompt)
-        return data
+        return data 
     else:
         return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, Make me a playlist for a rainy day?"
     # "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
@@ -209,20 +209,24 @@ def create_playlist(id, headers):
     return response_playlist
 
 
+# https://developer.spotify.com/documentation/web-api/reference/search
 def get_track_id(search_query, headers):
-    """ Gets the id of a music track
-        - 
+    """ Peforms a query search to get a track and pull its 'Spotify URI'
+        - Search for item with query string q in GET
+        - Search filtered with type 'track' to limit search scope to only tracks matching search_query
     """
     track_info = requests.get(API_BASE_URL + "search", headers=headers, params={'q': {search_query}, "type": "track"})
     track_info_json = track_info.json()
-    id = track_info_json['tracks']['items'][0]['id']
-    final_id = "spotify:track:" + id
-    return final_id
+    spotify_uri = track_info_json['tracks']['items'][0]['uri'] # could replace uri with id to grab only id
+    #final_id = "spotify:track:" + id   # instead of doing this, we can just grab the 'Spotify URI' instead!
+                                        # URI example: spotify:track:6rqhFgbbKwnb9MLmUQDhG6
+    return spotify_uri #final_id
 
 
+# https://developer.spotify.com/documentation/web-api/reference/add-tracks-to-playlist
 def add_tracks_to_playlist(playlist_id, list_of_track_ids, headers):
     """ Adds a list of tracks to a playlist
-        - 
+        - A maximum of 100 items can be added in one request  TODO Ability to handle this alongside limit/offset 
     """
     request_body = json.dumps({
       "uris": list_of_track_ids
@@ -242,7 +246,8 @@ def get_playlist_image(playlist_id, headers):
 
 def make_playlist_request(gpt_response):
     """ Main Method for Playlist Creation Functionality 
-        - 
+        - @param gpt_response, the json formatted playlist CHAT devised
+        - loops through tracks in playlist, appending corresponding track id's to []
     """
     if 'access_token' not in session:
         return redirect('/login')
