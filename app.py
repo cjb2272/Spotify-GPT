@@ -144,22 +144,32 @@ def chat():
         json_playlist = get_json_playlist_request_completion(revised_prompt) # ask CHAT to devise the playlist!
         data = make_playlist_request(json_playlist)
         return data 
+    elif valid.lower() == 'favorite':
+        revised_prompt = prompt_engineer(input)
+        #json_playlist = 
+        # TODOOOO TODO TODO TODO will NOT follow format of calling two methods in 144 145 above
     else:
-        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, Make me a playlist for a rainy day?"
-    # "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
+        return """Example Prompts: 
+        Make me a playlist that is a mix of Michael Jackson and The Weeknd?, 
+        Make me a playlist for a rainy day?, 
+        Make me a playlist of my favorite artist Billie Eilish?"""
 
 
 def check_if_request_valid(input):
-    """ Checks if message is a musical playlist request.
+    """ Checks if User Request Can Be Handled
         - Consulting Chat on the Back End to ask if a Users input/requests/demands/
           whatever it may be pertains to the scope of our applciation.
-        - returns one of Chat's possible responses pertaining request validity: {"recs", "no"}
+        - returns one of Chat's possible responses pertaining request validity: {'recs', 'favorite', 'no'}
     """
-    #prompt_check = f"Does this prompt have anything to do with asking for music recommendations or making a playlist? If it does, simply say 'recs'. If it has anything to do with asking for top songs or tracks (Ex. What are my top tracks? What are my top songs?), simply say 'tracks'. If it is neither, simply say 'no' - Prompt:'{input}'"
+    seq = "Does 'PROMPT IN QUESTION' listed below"
     prompt_check = ( 
-        "Does this prompt have anything to do with asking for music recommendations or making a playlist? "
-        "If it does, simply say 'recs'. "
-        f"If it does not, simply say 'no' - Prompt:'{input}'" 
+        "You MUST respond with one and only one of three responses: {'recs', 'favorite', 'no'}. \n"
+        f"{seq} include the user specifically identifying an artist, band, person, or group as their favorite? "
+        "If it does, simply say 'favorite'.\n"
+        f"{seq} have anything to do with asking for music recommendations or making a playlist? "
+        "If it does, simply say 'recs'.\n"
+        "If it does not, simply say 'no'.\n\n"
+        f"PROMPT IN QUESTION: \"{input}\"" 
     )
     # could i alternatively ask it to return a refusal value instead and print that?
     response = get_standard_request_completion(prompt_check)

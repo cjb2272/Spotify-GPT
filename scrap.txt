@@ -1,3 +1,11 @@
+
+#prompt_check = f"Does this prompt have anything to do with asking for music recommendations or making a playlist?
+ If it does, simply say 'recs'. If it has anything to do with asking for top songs or tracks 
+ (Ex. What are my top tracks? What are my top songs?), simply say 'tracks'. If it is neither, 
+ simply say 'no' - Prompt:'{input}'"
+
+# "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
+
     """
     elif valid.lower() == 'tracks':
         tracks = get_top_tracks()
