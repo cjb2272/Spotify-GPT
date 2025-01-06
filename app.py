@@ -144,22 +144,33 @@ def chat():
         json_playlist = get_json_playlist_request_completion(revised_prompt) # ask CHAT to devise the playlist!
         data = make_playlist_request(json_playlist)
         return data 
+    elif valid.lower() == 'favorite':
+        artist_name = get_favorite_artist_from_prompt(input)
+        json_playlist = get_json_playlist_artist_catalog(artist_name)
+        data = make_artist_catalog_playlist(json_playlist)
+        return data
     else:
-        return "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, Make me a playlist for a rainy day?"
-    # "Example Prompts: Make me a playlist that is a mix of Michael Jackson and The Weeknd?, What are my top songs?, Make me a playlist for a rainy day?"
+        return """Example Prompts: 
+        Make me a playlist that is a mix of Michael Jackson and The Weeknd?, 
+        Make me a playlist for a rainy day?, 
+        Make me a playlist of my favorite artist Billie Eilish?"""
 
 
 def check_if_request_valid(input):
-    """ Checks if message is a musical playlist request.
+    """ Checks if User Request Can Be Handled
         - Consulting Chat on the Back End to ask if a Users input/requests/demands/
           whatever it may be pertains to the scope of our applciation.
-        - returns one of Chat's possible responses pertaining request validity: {"recs", "no"}
+        - returns one of Chat's possible responses pertaining request validity: {'recs', 'favorite', 'no'}
     """
-    #prompt_check = f"Does this prompt have anything to do with asking for music recommendations or making a playlist? If it does, simply say 'recs'. If it has anything to do with asking for top songs or tracks (Ex. What are my top tracks? What are my top songs?), simply say 'tracks'. If it is neither, simply say 'no' - Prompt:'{input}'"
+    seq = "Does 'PROMPT IN QUESTION' listed below"
     prompt_check = ( 
-        "Does this prompt have anything to do with asking for music recommendations or making a playlist? "
-        "If it does, simply say 'recs'. "
-        f"If it does not, simply say 'no' - Prompt:'{input}'" 
+        "You MUST respond with one and only one of three responses: {'recs', 'favorite', 'no'}. \n"
+        f"{seq} include the user specifically identifying an artist, band, person, or group as their favorite? "
+        "If it does, simply say 'favorite'.\n"
+        f"{seq} have anything to do with asking for music recommendations or making a playlist? "
+        "If it does, simply say 'recs'.\n"
+        "If it does not, simply say 'no'.\n\n"
+        f"PROMPT IN QUESTION: \"{input}\"" 
     )
     # could i alternatively ask it to return a refusal value instead and print that?
     response = get_standard_request_completion(prompt_check)
@@ -210,6 +221,25 @@ def get_json_playlist_request_completion(prompt, model="gpt-4o-mini"):
     return response.choices[0].message.content
 
 
+def get_favorite_artist_from_prompt(user_prompt):
+    """ 
+        - Consulting Chat on the Back End to ask if ....
+    """
+    pull_favorite_artist_prompt = ( 
+        "The 'PROMPT IN QUESTION' below includes mention of a favorite music artist pertaining to the user. "
+        "The favorite artist will be the name of an artist, band, person, or group"
+        "You MUST simply respond with the Artist Name.\n"
+        "You will be penalized for responding with anything else besides strickly the Artist Name.\n"
+        "You MUST search the web to verify that you have correctly identified the Artist Name, "
+        "and that it is returned with the correct spelling in your response."
+        "\n\n"
+        f"PROMPT IN QUESTION: \"{user_prompt}\"" 
+    )
+    # could i alternatively ask it to return a refusal value instead and print that?
+    artist_name_str = get_standard_request_completion(pull_favorite_artist_prompt)
+    return artist_name_str
+
+
 def prompt_engineer(input):
     """ Prompt engineer behavior, taking users input and adding increased specificity:
         - Makes the prompt into a song recommendation format so we can process it
@@ -245,7 +275,7 @@ def create_playlist(id, headers):
 
 
 # https://developer.spotify.com/documentation/web-api/reference/search
-def get_track_id(search_query, headers):
+def get_track_uri(search_query, headers):
     """ Peforms a query search to get a track and pull its 'Spotify URI'
         - Search for item with query string q in GET
         - Search filtered with type 'track' to limit search scope to only tracks matching search_query
@@ -261,12 +291,34 @@ def get_track_id(search_query, headers):
 # https://developer.spotify.com/documentation/web-api/reference/add-tracks-to-playlist
 def add_tracks_to_playlist(playlist_id, list_of_track_ids, headers):
     """ Adds a list of tracks to a playlist
-        - A maximum of 100 items can be added in one request  TODO Ability to handle this alongside limit/offset 
+        - A maximum of 100 items can be added in one request 
+
+        - TODO Ability to handle this alongside limit/offset. 
+           ---anytime we are adding tracks, we pass in the complete list
     """
-    request_body = json.dumps({
-      "uris": list_of_track_ids
-    })
-    response = requests.post(API_BASE_URL + f"playlists/{playlist_id}/tracks", data=request_body, headers=headers)
+
+    def chunk_list(data, chunk_size=100):
+        chunks = []  # List to store chunks
+        for i in range(0, len(data), chunk_size):
+            chunks.append(data[i:i + chunk_size])  # Slice safely
+        return chunks
+    
+    chunked_tracks = chunk_list(list_of_track_ids)
+    response = None #declaring var. could be bad practice
+    for track_chunk in chunked_tracks:
+    
+        request_body = json.dumps({
+          "uris": track_chunk
+        })
+        response = requests.post(API_BASE_URL + f"playlists/{playlist_id}/tracks", data=request_body, headers=headers)
+
+        # Check for errors
+        if response.status_code != 201:  # 201 Created is expected for success
+            print(f"Failed to add tracks: {response.status_code} - {response.text}")
+            return response
+        
+        print(f"Successfully added {len(track_chunk)} tracks to playlist {playlist_id}")
+
     return response
 
 
@@ -279,10 +331,9 @@ def get_playlist_image(playlist_id, headers):
     return image
 
 
-def make_playlist_request(gpt_response):
-    """ Main Method for Playlist Creation Functionality 
-        - @param gpt_response, the json formatted playlist CHAT devised
-        - loops through tracks in playlist, appending corresponding track id's to []
+def get_spotify_headers():
+    """ Verifies a currently active authentication period
+        - TODO
     """
     if 'access_token' not in session:
         return redirect('/login')
@@ -294,6 +345,15 @@ def make_playlist_request(gpt_response):
         'Authorization': f"Bearer {session['access_token']}",
         "Content-Type": "application/json"
     }
+    return headers
+
+
+def make_playlist_request(gpt_response):
+    """ Main Method for Playlist Creation Functionality 
+        - @param gpt_response, the json formatted playlist CHAT devised
+        - loops through tracks in playlist, appending corresponding track id's to []
+    """
+    headers = get_spotify_headers()
 
     new_dict = ast.literal_eval(gpt_response) # TODO Rename new_dict  
 
@@ -305,13 +365,15 @@ def make_playlist_request(gpt_response):
     response_playlist_id = playlist_obj.json()['id'] # Grabbing the "Spotify ID associated with this playlist"
 
 
-    song_ids = []
+    song_uris = [] # URI includes Song ID
     for i in range(len(new_dict['playlist'])):
         search_query = new_dict['playlist'][i]['song_title'] + " " + new_dict['playlist'][i]['artist'] # "Thinking Bout You Frank Ocean"
-        track_id = get_track_id(search_query, headers)
-        song_ids.append(track_id)
+        track_uri = get_track_uri(search_query, headers)
+        song_uris.append(track_uri)
 
-    add_tracks_to_playlist(response_playlist_id, song_ids, headers)
+    #can we error check here in a better way, closer to root
+    if len(song_uris) != 0:
+        add_tracks_to_playlist(response_playlist_id, song_uris, headers)
 
     # Get playlist image
     response_playlist_image = get_playlist_image(response_playlist_id, headers)
@@ -319,6 +381,59 @@ def make_playlist_request(gpt_response):
     playlist_url = PLAYLIST_BASE_URL + response_playlist_id
 
     return {"url": playlist_url, "image": response_playlist_image} 
+
+
+def get_json_playlist_artist_catalog(artist_name):
+    """
+    """
+    headers = get_spotify_headers()
+
+    user_id = get_user_id(headers) # Get user's spotifty username ('Spotify user ID') ex. charlie7977
+    playlist_obj = create_playlist(user_id, headers) # Create Playlist and retrieve object. 
+    favorite_artist_playlist_id = playlist_obj.json()['id'] # Grabbing the "Spotify ID associated with this playlist"
+
+    song_uris = []
+    indexing_catalog = True
+    offset = 0 # increments by 50 until we reach end. max value it can be is 1000
+    # FIGURE OUT HOW TO LOOP THIS
+    while (indexing_catalog):
+        params = {
+          "q":f"artist:\"{artist_name}\"",
+          "type":"track",
+          "limit": 50,
+          "offset": offset
+        }
+        search_response = requests.get(API_BASE_URL + "search", headers=headers, params=params)
+        search_response_data = search_response.json()
+        num_tracks = len(search_response_data['tracks']['items'])
+        if (num_tracks == 0):
+            # TODO we have an error in the search, 
+            # LIKELY Artist name Chat found does not exist
+            return 0
+        for song in range(num_tracks):
+            song_uri = search_response_data['tracks']['items'][song]['uri'] # Can look into improving run time. do we want to extrack the tracks object a singular time
+            song_uris.append(song_uri)
+
+        # break condition
+        if (search_response_data['tracks']['next'] == None): # next - does next page of search results have tracks
+            indexing_catalog = False
+
+        offset += 50
+
+    response = add_tracks_to_playlist(favorite_artist_playlist_id, song_uris, headers)
+    if (response.status_code != 201):
+        return {"error": response.text} # TODO THIS NOT CORRECT BUT I SHOULDN'T HIT IT
+
+    # Get playlist image
+    response_playlist_image = get_playlist_image(favorite_artist_playlist_id, headers)
+    playlist_url = PLAYLIST_BASE_URL + favorite_artist_playlist_id
+    return {"url": playlist_url, "image": response_playlist_image}
+
+
+def make_artist_catalog_playlist(json_playlist):
+    """
+    """
+    return 
 
 
 if __name__ == '__main__':
