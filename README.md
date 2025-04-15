@@ -1,6 +1,6 @@
 # Spotify-GPT 🎧
 Use ChatGPT Chat Completions API & the Spotify API to automate playlist creation based on the users request!
-![](https://github.com/flyseddy/Spotify-GPT/blob/main/screenshots/chancePlaylistRequest.png?raw=true)
+<img src="screenshots/chancePlaylistRequest.png" alt="application preview">
 
 ## Overview:
 
