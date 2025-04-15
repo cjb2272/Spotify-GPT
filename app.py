@@ -3,9 +3,6 @@ FLASK SERVER MAIN FILE
 @author: Charles Baker
 @original_author: Sedrick Thomas (https://github.com/flyseddy)
 
-- As a shortcut we name out flask app "app.py" that way when issuing the flask run command 
-  we dont have to specify an app location with --app
-
 """
 
 from datetime import datetime
@@ -14,7 +11,6 @@ from flask import Flask, render_template, request, jsonify, redirect, session, u
 import urllib.parse
 from pydantic import BaseModel
 import requests
-import openai
 from openai import OpenAI
 import ast
 import json
@@ -30,17 +26,14 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID') # Spotify Client ID & Secret found in Spotify Dashboard https://developer.spotify.com/dashboard
 CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET') 
 
-# Sedrick deployed his app quickly using Render, a hosting service
-REDIRECT_URI = 'http://127.0.0.1:5000/callback' # Use Your domain name (where app is deployed) and add "/callback" on the end
-# REDIRECT_URI is the URL to which the user is redirected after successful authentication
-# When you authenticate with a third party service like spotify , 
-# that service will redirect the user back to your app after the authentication process is complete
+REDIRECT_URI = 'http://127.0.0.1:5000/callback' # domain + "/callback"
 
 AUTH_ENDPOINT_URI = 'https://accounts.spotify.com/authorize' # AUTH_URL
 TOKEN_ENDPOINT_URI = 'https://accounts.spotify.com/api/token'  # Token URL
-API_BASE_URL = 'https://api.spotify.com/v1/' # Base Address of the Spotify Web API.  https://api.spotify.com. why is v1 included
+API_BASE_URL = 'https://api.spotify.com/v1/' # Base Address of the Spotify Web API. 
 PLAYLIST_BASE_URL = 'https://open.spotify.com/playlist/'
 
+# classes for use in structured output requests
 class Song(BaseModel):
     artist: str
     song_title: str
@@ -51,11 +44,11 @@ class Playlist(BaseModel):
 
 @app.route("/")
 def index():
-    """Landing Page for Spotify Authentication for the Spotify-GPT application.""" # Docstrings
-    return render_template("index.html")  #html is our default response type in FLASK
+    """Landing Page for Spotify Authentication for the Spotify-GPT application."""
+    return render_template("index.html") 
 
 
-@app.route("/login") # the route() decorator binds a function to a URL
+@app.route("/login")
 def login():
     """ Method for requesting Spotify User Authorization by sending a GET request to the authorize endpoint
         - Redirects to Official Spotify Login Page
@@ -64,7 +57,7 @@ def login():
     """
     # the user doing authentication is asked to authorize access to data sets /features defined in the scopes listed space delimited
     scope = "user-library-read playlist-modify-public playlist-modify-private user-top-read"
-    auth_headers = {  # these are query string arguments which become part of the URL.. maybe they become headers after that like
+    auth_headers = { 
     "client_id": CLIENT_ID,
     "response_type": "code",
     "redirect_uri": REDIRECT_URI,
@@ -72,13 +65,10 @@ def login():
     "show_dialog": True,
     #"state": .... security param strongly recommended if moving to public..
     }
-    # urllib.parse.urlencode() converts a dict of auth_headers into a query string for example 'client_id=123&response_type=code'
     auth_url = f"{AUTH_ENDPOINT_URI}?{urllib.parse.urlencode(auth_headers)}"
     return redirect(auth_url) 
 
 
-# AFTER successful completetion of spotify authentication (third party auth)
-# callback endpoint for handling this redirect and processing any token or user info sent by the spotify (or whatever third party service)
 @app.route("/callback") 
 def callback():
     """ Grants user access token info and redirects to Spotify-GPT App
@@ -106,11 +96,10 @@ def callback():
         session['access_token'] = token_info['access_token']
         session['refresh_token'] = token_info['refresh_token']
         session['expires_at'] = datetime.now().timestamp() + token_info['expires_in']
-        return render_template("chat.html") # flask will look for templates in the templates folder 
-                                            # TODO not sure what the autoscroll function in chat.html is doing
+        return render_template("chat.html") 
 
 
-@app.route("/refresh-token") # common practice to use dashes in route names
+@app.route("/refresh-token")
 def refresh_token():
     """Refresh Token Logic"""
     if 'refresh_token' not in session:
@@ -130,7 +119,7 @@ def refresh_token():
         return render_template("chat.html")
 
 
-@app.route("/get", methods=["GET", "POST"]) # by default, a route only answers to get requests - methods param used
+@app.route("/get", methods=["GET", "POST"])
 def chat():
     """ Main Chatbot Logic 
         - Currently handles strickly playlist creation.
@@ -151,9 +140,9 @@ def chat():
         return data
     else:
         return """Example Prompts: 
-        Make me a playlist that is a mix of Michael Jackson and The Weeknd?, 
-        Make me a playlist for a rainy day?, 
-        Make me a playlist of my favorite artist Billie Eilish?"""
+        Make me a playlist that is a mix of Michael Jackson and The Weeknd, 
+        Make me a playlist for a rainy day, 
+        Make me a playlist of my favorite artist Billie Eilish"""
 
 
 def check_if_request_valid(input):
@@ -304,7 +293,7 @@ def add_tracks_to_playlist(playlist_id, list_of_track_ids, headers):
         return chunks
     
     chunked_tracks = chunk_list(list_of_track_ids)
-    response = None #declaring var. could be bad practice
+    response = None # declaring var. could be bad practice
     for track_chunk in chunked_tracks:
     
         request_body = json.dumps({
@@ -437,4 +426,4 @@ def make_artist_catalog_playlist(json_playlist):
 
 
 if __name__ == '__main__':
-    app.run() #debug=True can be placed as param
+    app.run()
